@@ -1,21 +1,23 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
 from sys import stderr, argv
-from os import system, makedirs, path, listdir, rmdir
+from os import system, makedirs, path, listdir, rmdir, remove
 from shutil import move
 from argparse import ArgumentParser
-
-TMP_FILE = '/tmp/bmv.tmp'
+from tempfile import NamedTemporaryFile
 
 def main():
-	argParser = ArgumentParser(description = 'Text editor based batch file renaming/moving script.')
+	argParser = ArgumentParser(description = "Text editor based batch file renaming/moving program.")
 
-	argParser.add_argument('-s', '--script', type = str, help = 'External script/program/command to execute ' \
-	                                                            'for each file move. Script arguments ' \
-	                                                            'will be the old and new file names.')
-	argParser.add_argument('-e', '--editor', type = str, default = 'vim', help = 'Editor to edit file names with.')
-	argParser.add_argument('-d', '--delete-empty', action = 'store_true', default = False, help = 'Delete empty folders after move.')	
-	argParser.add_argument('files', metavar='FILE', type = str, nargs = '+', help = 'File to move.')
+	argParser.add_argument("-s", "--script", type = str,
+	                       help = "External command to execute for each file move. " \
+	                              "Script arguments will be the old and new file names.")
+	argParser.add_argument("-e", "--editor", type = str, default = "vim",
+	                       help = "Editor to edit file names with.")
+	argParser.add_argument("-d", "--delete-empty", action = "store_true", default = False,
+	                       help = "Delete empty folders after move.")
+	argParser.add_argument("files", metavar="FILE", type = str, nargs = "+", help = "File to move.")
 
 	args = argParser.parse_args()
 	moved = 0
@@ -27,76 +29,88 @@ def main():
 				oldFiles.append(oldFile)
 
 			else:
-				print >> stderr, 'WARNING: file %s does not exist.' % oldFile
+				print("WARNING: file %s does not exist." % oldFile, file = stderr)
 
 	if oldFiles:
-		with open(TMP_FILE, 'w') as bmvHandle:
-			for oldFile in oldFiles:
-				print >> bmvHandle, oldFile
+		bmvHandle = NamedTemporaryFile(mode = "w", delete = False)
 
-		vimStatus = system('%s %s' % (args.editor, TMP_FILE))
+		for oldFile in oldFiles:
+			print(oldFile, file = bmvHandle)
 
-		with open(TMP_FILE) as bmvHandle:
-			newFiles = [newFile.strip('\n\r') for newFile in bmvHandle.readlines() if newFile.strip('\n\r') != '']
+		bmvHandle.close()
+
+		vimStatus = system("\"%s\" \"%s\"" % (args.editor, bmvHandle.name))
 
 		if vimStatus != 0:
-			print >> stderr, 'ERROR: Editor error.'
+			print("ERROR: Editor error.", file = stderr)
 
-			return 1
+			exit(-2)
+
+		with open(bmvHandle.name) as bmvHandle:
+			newFiles = bmvHandle.read().splitlines()
+
+		remove(bmvHandle.name)
 
 		if len(oldFiles) != len(newFiles):
-			print >> stderr, 'ERROR: Number of files to move is different than expected.'
+			print("ERROR: Number of files to move is different than expected.", file = stderr)
 
-			return 2
+			exit(-2)
 
 		if len(newFiles) != len(set(newFiles)):
-			print >> stderr, 'ERROR: file names must be unique.'
+			print("ERROR: file names must be unique.", file = stderr)
 
-			return 3
+			exit(-2)
 
-		for i in xrange(len(oldFiles)):
-			if oldFiles[i] != newFiles[i]:
+		tmpFiles = []
+
+		for newFile in newFiles:
+			tmpFiles.append(path.join(path.dirname(newFile), ".bmv_" + path.basename(newFile)))
+
+		for moveType in ("tmp", "final"):
+			for i in range(len(oldFiles)):
+				if newFiles[i] == "" or oldFiles[i] == newFiles[i]:
+					continue
+
 				try:
-					newDir = path.dirname(newFiles[i])
+					if moveType == "tmp":
+						newDir = path.dirname(newFiles[i])
 
-					if newDir and not path.exists(newDir):
-						makedirs(newDir)
+						if newDir != "" and not path.exists(newDir):
+							makedirs(newDir)
 
-					if args.script:
-						system('%s "%s" "%s"' % (args.script, oldFiles[i], newFiles[i] or './'))
+					if moveType == "tmp":
+						src = oldFiles[i]
+						dest = tmpFiles[i]
 
 					else:
-						move(oldFiles[i], newFiles[i] or './')
+						src = tmpFiles[i]
+						dest = newFiles[i]
 
-					if args.delete_empty:
+					if args.script:
+						system("\"%s\" \"%s\" \"%s\"" % (args.script, src, dest))
+
+					else:
+						move(src, dest)
+
+					if moveType == "tmp" and args.delete_empty:
 						oldDir = path.dirname(os.path.abspath(oldFiles[i]))
 
-						while True:
-							if not listdir(oldDir):
-								rmdir(oldDir)
-
-							else:
-								break
-
-							tmp = path.join(oldDir)
-
-							if tmp == oldDir:
-								break
-
-							oldDir = tmp
+						if listdir(oldDir) == []:
+							rmdir(oldDir)
 
 				except Exception as e:
-					print >> stderr, 'WARNING: Cannot move %s to %s - %s.' % (oldFiles[i], newFiles[i], str(e))
+					print("WARNING: Cannot move %s to %s - %s." % (oldFiles[i], newFiles[i], str(e)), file = stderr)
 
 				else:
-					print '%s\t%s' % (oldFiles[i], newFiles[i])
+					if moveType == "final":
+						print("%s\t%s" % (oldFiles[i], newFiles[i]))
 
-					moved += 1
+						moved += 1
 
 		if moved:
-			print
+			print()
 
-	print '%s files moved.' % moved
+	print("%s files moved." % moved)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 	main()
