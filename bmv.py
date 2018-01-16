@@ -4,13 +4,14 @@ from __future__ import print_function
 from sys import stderr, argv
 from os import system, makedirs, path, listdir, rmdir, remove
 from shutil import move
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from tempfile import NamedTemporaryFile
 
 def main():
-	argParser = ArgumentParser(description = "Text editor based batch file renaming/moving program.")
+	argParser = ArgumentParser(formatter_class = ArgumentDefaultsHelpFormatter,
+	                           description = "Text editor based batch file renaming/moving program.")
 
-	argParser.add_argument("-s", "--script", type = str,
+	argParser.add_argument("-s", "--script", type = str, default = "mv",
 	                       help = "External command to execute for each file move. " \
 	                              "Script arguments will be the old and new file names.")
 	argParser.add_argument("-e", "--editor", type = str, default = "vim",
